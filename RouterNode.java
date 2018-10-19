@@ -10,6 +10,7 @@ public class RouterNode {
     private HashMap<Integer,Integer> forwarding = new HashMap<Integer,Integer>();  // Hash con los nodos a los que se redirecciona. Ej: <x,y> si quiero ir a x debo reenviar a y 
     private HashMap<Integer,Integer> costs      = new HashMap<Integer,Integer>();       // Hash con los costos. Ej: <x,y> si quiero ir a x me cuesta y (Solo conexiones directas)
     private HashMap<Integer,Integer> distancias  = new HashMap<Integer,Integer>();       // Hash con las distancias. Ej: <x,y> si quiero ir a x me cuesta y
+    private HashMap<Integer,HashMap<Integer,Integer>> vecinos  = new HashMap<Integer,HashMap<Integer,Integer>>();       // Una matriz que contiene los vectores de distancia de los vecinos
 
     private Boolean envenenada = true; // Flag de reversa envenenada
 
@@ -70,6 +71,13 @@ public class RouterNode {
         HashMap<Integer,Integer> mincost    = pkt.mincost; // Obtengo el arbol de costo minimo 
         int source                          = pkt.sourceid;
         int sourceCost                      = this.costs.get(source);   // Obtengo el costo de ir hasta el nodo que envia el arbol
+
+        //Actualizo el arbol de costos para el nodo de entrada
+        vecinos.put(source,mincost);
+
+        // cada vez que un vecino envia una actualizacion no es necesario realizar la comprobacion de distancia contra todos los posibles vecinos ya que en nuestro vector tenemos los minimos
+        // Y el unico cambio en la red ocurrio con los costos del nodo que envia esta señal, por lo tanto comprobamos los vectores de distancia nuestros con la actualizacion recibida de nuestro vecino
+
         for(int x = 0; x < mincost.size(); x++){    // Recorro el arbol minimo
             // Utilizando el algoritmo de Bellman-Ford
             if( mincost.containsKey(x) ){
@@ -134,12 +142,33 @@ public class RouterNode {
 
         myGUI.println("La reversa envenenada "+(this.getEnvenenada()? "esta activa" : "desactivada"));
 
+        
+        myGUI.println("Tabla de distancias de vecinos:");
+        String nodos = F.format("Vecinos", this.spaces  )+"|";
+        String vec  = "";
+        for(int x = 0; x < RouterSimulator.NUM_NODES; x++){
+            nodos   += F.format(x , this.spaces  );
+            if(this.vecinos.containsKey(x)){ // Si tengo el vecino x
+                vec += F.format("Vecino: "+x,this.spaces)+"|"; // Lo agrego a la tabla
+                for(int y = 0; y < RouterSimulator.NUM_NODES; y++){ // Recorro sus valores
+                    vec += F.format(this.vecinos.get(x).get(y),this.spaces); // Y los agrego a la fila
+                }
+                vec += "\n"; // Agrego salto de linea
+            } 
+        }
         /* Pasamos a imprimir la tabla de esta manera
         | 0 . . . . . . n
-        costos  | x . . . . . . x
-        forward | 
+        vecino 0  | x . . . . . . x
+        ......
+        vecino n | 
         */
-        String nodos    = F.format("nodo: "+this.myID,this.spaces)+"|";
+        myGUI.println(nodos);
+        myGUI.println(vec);
+        myGUI.println();
+        /* ------------------------------------ */
+            
+        
+        nodos           = F.format("nodo: "+this.myID,this.spaces)+"|";
         String dist     = F.format("distancia",this.spaces)+"|";
         String costos   = F.format("costos",this.spaces)+"|";
         String forward  = F.format("forward",this.spaces)+"|";
@@ -155,6 +184,12 @@ public class RouterNode {
             spaces += "-";
         }
 
+        /* Pasamos a imprimir la tabla de esta manera
+        | 0 . . . . . . n
+        costos  | x . . . . . . x
+        forward | 
+        */
+        myGUI.println("Tabla de datos del nodo:");
         myGUI.println(nodos);
         myGUI.println(spaces);  
         myGUI.println(dist);
@@ -191,3 +226,4 @@ public class RouterNode {
     }
 
 }
+
