@@ -1,4 +1,3 @@
-import javax.swing.*;        
 import java.util.*;
 
 public class RouterNode {
@@ -12,7 +11,7 @@ public class RouterNode {
     private HashMap<Integer,Integer> costs      = new HashMap<Integer,Integer>();       // Hash con los costos. Ej: <x,y> si quiero ir a x me cuesta y (Solo conexiones directas)
     private HashMap<Integer,Integer> distancias  = new HashMap<Integer,Integer>();       // Hash con las distancias. Ej: <x,y> si quiero ir a x me cuesta y
 
-    private Boolean envenenada = false; // Flag de reversa envenenada
+    private Boolean envenenada = true; // Flag de reversa envenenada
 
     private int spaces  = 15;   // Variable utilizada para el formateo
 
@@ -42,7 +41,7 @@ public class RouterNode {
             }else{                
                 this.forwarding.put(x,x != this.myID? RouterSimulator.INFINITY : x );    // Si es null quiere decir que no tiene link directo
                 this.costs.put(x,x != this.myID? RouterSimulator.INFINITY : 0 );         // Inicializo los costos
-                this.distancias.put(x,x != this.myID? RouterSimulator.INFINITY : 0 );         // Inicializo los costos
+                this.distancias.put(x,x != this.myID? RouterSimulator.INFINITY : 0 );         // Inicializo los costos                
             }
         }
         
@@ -51,7 +50,7 @@ public class RouterNode {
         for(int x = 0; x < RouterSimulator.NUM_NODES; x++){
             if(x != this.myID && this.costs.get(x) != RouterSimulator.INFINITY){ // Si es mi vecino ( costo directo distinto de infinito ) y no soy yo mismo
                 RouterPacket routerPacket = new RouterPacket(this.myID,x,this.distancias);   // Creo un reouterPacket
-                this.sendUpdate(routerPacket); // Envio los datos 
+                this.sendUpdate(routerPacket); // Envio los datos                 
             }
         }
 
@@ -67,7 +66,7 @@ public class RouterNode {
 
     //--------------------------------------------------
     public void recvUpdate(RouterPacket pkt) {
-
+        Boolean needBroadcast               = false;
         HashMap<Integer,Integer> mincost    = pkt.mincost; // Obtengo el arbol de costo minimo 
         int source                          = pkt.sourceid;
         int sourceCost                      = this.costs.get(source);   // Obtengo el costo de ir hasta el nodo que envia el arbol
@@ -76,18 +75,52 @@ public class RouterNode {
             if( mincost.containsKey(x) ){
                 if( sourceCost + mincost.get(x) < this.distancias.get(x) ){      // Si c(this,source) + c(source,x) < c(this,x) | Si me queda mas corto ir por el nodo source que mi ruta anterior                
                     this.forwarding.put(x,source);                             // En mi lista de forwarding coloco que para ir a x nos redirijimos a source
-                    this.updateLinkCost(x,sourceCost + mincost.get(x));     // Actualizo mi arbol de costos con c(this,x) = c(this,source) + c(source,x)
+                    this.distancias.put(x,sourceCost + mincost.get(x));     // Actualizo mi arbol de costos con c(this,x) = c(this,source) + c(source,x)
+                    needBroadcast = true;
                 }
-            }else{
-                //this.updateLinkCost(x,this.distancias.get(x));     // Actualizo mi arbol de costos con c(this,x) = c(this,source) + c(source,x)
+            }   
+            // Para la actualizacion de Links
+            // Si me redirigo al nodo source para ir a x
+            // Y el c(source,x) + d(this,x) > c(this,x)
+            // Entonces nos queda mas facil ir directamente a x desde this
+            if( this.forwarding.get(x) == source && mincost.get(x) + this.distancias.get(source) >  this.costs.get(x) ){  
+                this.distancias.put(x,this.costs.get(x)); // Actualizo la distancia del link a el costo directo entre this y source del packet
+                this.forwarding.put(x, x);                // Actualizo el forwarding
+                needBroadcast = true;
             }
-            
         }
+        if(!needBroadcast){            
+            // Si no necesita el broadcast verifico si tengo alguna distancia en infinito
+            for(int x = 0; x < RouterSimulator.NUM_NODES;x++){
+                if(this.distancias.get(x) == RouterSimulator.INFINITY){ // Si hay alguna distancia en infinito 
+                    needBroadcast = true;   // Coloco en true para realizar el broadcast
+                }
+            }
+        }
+        
+        if( needBroadcast ){
+            for(int x = 0; x < RouterSimulator.NUM_NODES; x++){ // Hago el broadcast de mi actualizacion de costos
+                if(this.costs.get(x) != RouterSimulator.INFINITY && this.myID != x){ 
+                    RouterPacket routerPacket = new RouterPacket(this.myID,x,this.distancias);   // Creo un reouterPacket
+                    this.sendUpdate(routerPacket);
+                }
+            }
+        }
+        this.printDistanceTable(); // Imprimo mi tabla de distancias
     }
   
 
     //--------------------------------------------------
     private void sendUpdate(RouterPacket pkt) {
+        // ! Utilizar la reversa envenenada no funciona siempre
+        // Si el camino tiene un tamaño mayor a 3 no funciona 
+        if ( this.getEnvenenada() ){    // Si se utiliza la reversa envenenada
+            for (int x = 0; x < RouterSimulator.NUM_NODES; x++ ) {  
+                if (this.forwarding.get(x) == pkt.destid){   // Si llego a x a traves de el destino del paquete
+                    pkt.mincost.put(x, RouterSimulator.INFINITY ); // Le mando infinito 
+                }
+            }
+        }
         sim.toLayer2(pkt);
 
     }
@@ -106,10 +139,10 @@ public class RouterNode {
         costos  | x . . . . . . x
         forward | 
         */
-        String nodos    = "         |";
-        String dist     = "distancia|";
-        String costos   = "costos   |";
-        String forward  = "forward  |";
+        String nodos    = F.format("nodo: "+this.myID,this.spaces)+"|";
+        String dist     = F.format("distancia",this.spaces)+"|";
+        String costos   = F.format("costos",this.spaces)+"|";
+        String forward  = F.format("forward",this.spaces)+"|";
         String spaces   = "";
 
         for(int x = 0; x < RouterSimulator.NUM_NODES; x++){
@@ -134,14 +167,27 @@ public class RouterNode {
 
     //--------------------------------------------------
     public void updateLinkCost(int dest, int newcost) {
-        this.distancias.put(dest,newcost);   // Actualizo los costos para dicho nodo
-        this.printDistanceTable(); // Imprimo mi tabla de distancias
-        for(int x = 0; x < RouterSimulator.NUM_NODES; x++){ // Hago el broadcast de mi actualizacion de costos
-            if(this.costs.get(x) != RouterSimulator.INFINITY){ 
-                RouterPacket routerPacket = new RouterPacket(this.myID,x,this.distancias);   // Creo un reouterPacket
-                this.sendUpdate(routerPacket);
+        // Funcion que actualiza el costo del enlace
+        Boolean needBroadcast = false;
+        int previousCost = this.costs.get(dest);
+        this.costs.put(dest,newcost);   // Actualizo los costos para dicho nodo
+        for(int x = 0; x < RouterSimulator.NUM_NODES; x++){ // Recorro los nodos            
+            if( this.forwarding.get(x) == dest ){           // Si alguno de la redireccion es el afectado
+                // Actualizo la distancia
+                this.distancias.put(x,  this.distancias.get(x) + (newcost - previousCost)); // La nueva distancia es la anterior mas la diferencia entre el nuevo costo y el anterior
+                needBroadcast = true;                  
             }
         }
+        if(needBroadcast){
+            for(int x = 0; x < RouterSimulator.NUM_NODES; x++){ // Hago el broadcast de mi actualizacion de costos
+                if(this.costs.get(x) != RouterSimulator.INFINITY && this.myID != x){ 
+                    RouterPacket routerPacket = new RouterPacket(this.myID,x,this.distancias);   // Creo un reouterPacket
+                    this.sendUpdate(routerPacket);
+                }
+            }
+        }
+        this.printDistanceTable(); // Imprimo mi tabla de distancias
+        
     }
 
 }
